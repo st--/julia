@@ -170,6 +170,11 @@ const LOAD_PATH = copy(DEFAULT_LOAD_PATH)
 # HOME_PROJECT is no longer used, here just to avoid breaking things
 const HOME_PROJECT = Ref{Union{String,Nothing}}(nothing)
 const ACTIVE_PROJECT = Ref{Union{String,Nothing}}(nothing)
+## Watchers for when the active project changes (e.g., Revise)
+# Each should be a thunk, i.e., `f()`. To determine the current active project,
+# the thunk can query `Base.active_project()`.
+# Modify it only via `Base.set_active_project(proj)`
+const active_project_watcher_thunks = []
 
 function current_project(dir::AbstractString)
     # look for project file in current dir and parents
@@ -231,10 +236,11 @@ function init_active_project()
     project = (JLOptions().project != C_NULL ?
         unsafe_string(Base.JLOptions().project) :
         get(ENV, "JULIA_PROJECT", nothing))
-    ACTIVE_PROJECT[] =
+    set_active_project(
         project === nothing ? nothing :
         project == "" ? nothing :
         startswith(project, "@") ? load_path_expand(project) : abspath(expanduser(project))
+    )
 end
 
 ## load path expansion: turn LOAD_PATH entries into concrete paths ##
@@ -280,7 +286,7 @@ load_path_expand(::Nothing) = nothing
 """
     active_project()
 
-Return the path of the active `Project.toml` file.
+Return the path of the active `Project.toml` file. See also [`Base.set_active_project`](@ref).
 """
 function active_project(search_load_path::Bool=true)
     for project in (ACTIVE_PROJECT[],)
@@ -305,6 +311,27 @@ function active_project(search_load_path::Bool=true)
         basename(project) in project_names && return project
     end
 end
+
+"""
+    set_active_project(projfile::Union{AbstractString,Nothing})
+
+Set the active `Project.toml` file to `projfile`. See also [`Base.active_project`](@ref).
+"""
+function set_active_project(projfile::Union{AbstractString,Nothing})
+    ACTIVE_PROJECT[] = projfile
+    notify_active_project_watchers()
+end
+
+function notify_active_project_watchers()
+    for f in active_project_watcher_thunks
+        try
+            Base.invokelatest(f)
+        catch
+        end
+    end
+    return nothing
+end
+
 
 """
     load_path()
