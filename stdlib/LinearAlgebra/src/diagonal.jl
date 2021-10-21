@@ -415,8 +415,35 @@ function rdiv!(A::Union{LowerTriangular,UpperTriangular}, D::Diagonal)
     A
 end
 
-(/)(A::Union{StridedMatrix, AbstractTriangular}, D::Diagonal) =
-    rdiv!((typeof(oneunit(eltype(D))/oneunit(eltype(A)))).(A), D)
+(/)(A::Union{StridedMatrix, AbstractTriangular, Tridiagonal}, D::Diagonal) =
+    rdiv!((typeof(oneunit(eltype(A))/oneunit(eltype(D)))).(A), D)
+function (/)(S::SymTridiagonal, D::Diagonal)
+    T = typeof(oneunit(eltype(S))/oneunit(eltype(D)))
+    rdiv!(Tridiagonal(T.(S.ev), T.(S.dv), T.(S.ev)), D)
+end
+function rdiv!(T::Tridiagonal, D::Diagonal)
+    n = size(T, 2)
+    dd = D.diag
+    if (k = length(dd)) ≠ n
+        throw(DimensionMismatch("left hand side has $n columns but D is $k by $k"))
+    end
+    ddj = dd[1]
+    iszero(ddj) && throw(SingularException(1))
+    T.d[1]  /= ddj
+    T.dl[1] /= ddj
+    for j in 2:n-1
+        ddj = dd[j]
+        iszero(ddj) && throw(SingularException(j))
+        T.dl[j] /= ddj
+        T.d[j]  /= ddj
+        T.du[j-1] /= ddj
+    end
+    ddj = dd[n]
+    iszero(ddj) && throw(SingularException(n))
+    T.d[n] /= ddj
+    T.du[n-1] /= ddj
+    return T
+end
 
 @inline function kron!(C::AbstractMatrix, A::Diagonal, B::Diagonal)
     valA = A.diag; nA = length(valA)
@@ -517,7 +544,34 @@ for f in (:exp, :cis, :log, :sqrt,
 end
 
 (\)(D::Diagonal, A::AbstractMatrix) =
-    ldiv!(D, (typeof(oneunit(eltype(D))/oneunit(eltype(A)))).(A))
+    ldiv!(D, (typeof(oneunit(eltype(D)) \ oneunit(eltype(A)))).(A))
+function (\)(D::Diagonal, S::SymTridiagonal)
+    T = typeof(oneunit(eltype(D)) \ oneunit(eltype(S)))
+    ldiv!(D, Tridiagonal(T.(S.ev), T.(S.dv), T.(S.ev)))
+end
+function ldiv!(D::Diagonal, T::Tridiagonal)
+    m = size(T, 1)
+    dd = D.diag
+    if (k = length(dd)) ≠ m
+        throw(DimensionMismatch("diagonal matrix is $k by $k but right hand side has $m rows"))
+    end
+    ddj = dd[1]
+    iszero(ddj) && throw(SingularException(1))
+    T.d[1] = ddj \ T.d[1]
+    T.du[1] = ddj \ T.du[1]
+    for j in 2:m-1
+        ddj = dd[j]
+        iszero(ddj) && throw(SingularException(j))
+        T.dl[j-1] = ddj \ T.dl[j-1]
+        T.d[j]  = ddj \ T.d[j]
+        T.du[j] = ddj \ T.du[j]
+    end
+    ddj = dd[m]
+    iszero(ddj) && throw(SingularException(m))
+    T.dl[m-1] = ddj \ T.dl[m-1]
+    T.d[m] = ddj \ T.d[m]
+    return T
+end
 
 (\)(D::Diagonal, b::AbstractVector) = D.diag .\ b
 (\)(Da::Diagonal, Db::Diagonal) = Diagonal(Da.diag .\ Db.diag)
