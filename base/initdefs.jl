@@ -174,7 +174,7 @@ const ACTIVE_PROJECT = Ref{Union{String,Nothing}}(nothing)
 # Each should be a thunk, i.e., `f()`. To determine the current active project,
 # the thunk can query `Base.active_project()`.
 # Modify it only via `Base.set_active_project(proj)`
-const active_project_watcher_thunks = []
+const active_project_callbacks = []
 
 function current_project(dir::AbstractString)
     # look for project file in current dir and parents
@@ -319,17 +319,12 @@ Set the active `Project.toml` file to `projfile`. See also [`Base.active_project
 """
 function set_active_project(projfile::Union{AbstractString,Nothing})
     ACTIVE_PROJECT[] = projfile
-    notify_active_project_watchers()
-end
-
-function notify_active_project_watchers()
-    for f in active_project_watcher_thunks
+    for f in active_project_callbacks
         try
             Base.invokelatest(f)
         catch
         end
     end
-    return nothing
 end
 
 

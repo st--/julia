@@ -195,8 +195,8 @@ saved_load_path = copy(LOAD_PATH)
 saved_depot_path = copy(DEPOT_PATH)
 saved_active_project = Base.ACTIVE_PROJECT[]
 watcher_counter = Ref(0)
-push!(Base.active_project_watcher_thunks, () -> watcher_counter[] += 1)
-push!(Base.active_project_watcher_thunks, () -> error("broken"))
+push!(Base.active_project_callbacks, () -> watcher_counter[] += 1)
+push!(Base.active_project_callbacks, () -> error("broken"))
 
 push!(empty!(LOAD_PATH), joinpath(@__DIR__, "project"))
 append!(empty!(DEPOT_PATH), [mktempdir(), joinpath(@__DIR__, "depot")])
@@ -700,7 +700,7 @@ end
 
 append!(empty!(LOAD_PATH), saved_load_path)
 append!(empty!(DEPOT_PATH), saved_depot_path)
-for _ = 1:2 pop!(Base.active_project_watcher_thunks) end
+for _ = 1:2 pop!(Base.active_project_callbacks) end
 Base.set_active_project(saved_active_project)
 @test watcher_counter[] == 3
 
