@@ -1096,7 +1096,22 @@ function show(io::IO, m::Module)
     if is_root_module(m)
         print(io, nameof(m))
     else
-        print(io, join(fullname(m),"."))
+        print_fullname(io, m)
+    end
+end
+function print_fullname(io::IO, m::Module)
+    _print_fullname(io, parentmodule(m))
+    print(io, nameof(m))
+end
+function _print_fullname(io::IO, m::Module)
+    mp = parentmodule(m)
+    if m === Main || m === Base || m === Core || mp === m
+        print(io, nameof(m))
+        print(io, '.')
+    else
+        _print_fullname(io, mp)
+        print(io, nameof(m))
+        print(io, '.')
     end
 end
 
