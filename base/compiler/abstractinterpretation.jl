@@ -1542,22 +1542,26 @@ function abstract_eval_statement(interp::AbstractInterpreter, @nospecialize(e), 
         if isconcretetype(t) && !ismutabletype(t)
             args = Vector{Any}(undef, length(e.args)-1)
             ats = Vector{Any}(undef, length(e.args)-1)
-            anyconst = false
-            allconst = true
+            local anyconst = anyrefine = false
+            local allconst = true
             for i = 2:length(e.args)
                 at = widenconditional(abstract_eval_value(interp, e.args[i], vtypes, sv))
                 if !anyconst
-                    anyconst = has_nontrivial_const_info(at)
+                    if has_nontrivial_const_info(at)
+                        anyconst = true
+                    elseif !anyrefine
+                        anyrefine = at ⋤ fieldtype(t, i - 1)
+                    end
                 end
                 ats[i-1] = at
                 if at === Bottom
                     t = Bottom
-                    allconst = anyconst = false
+                    anyconst = anyrefine = allconst = false
                     break
                 elseif at isa Const
                     if !(at.val isa fieldtype(t, i - 1))
                         t = Bottom
-                        allconst = anyconst = false
+                        anyconst = anyrefine = allconst = false
                         break
                     end
                     args[i-1] = at.val
@@ -1569,7 +1573,7 @@ function abstract_eval_statement(interp::AbstractInterpreter, @nospecialize(e), 
             if t !== Bottom && fieldcount(t) == length(ats)
                 if allconst
                     t = Const(ccall(:jl_new_structv, Any, (Any, Ptr{Cvoid}, UInt32), t, args, length(args)))
-                elseif anyconst
+                elseif anyconst || anyrefine
                     t = PartialStruct(t, ats)
                 end
             end
@@ -1741,17 +1745,21 @@ function widenreturn(@nospecialize(rt), @nospecialize(bestguess), nslots::Int, s
     isa(rt, Type) && return rt
     if isa(rt, PartialStruct)
         fields = copy(rt.fields)
-        haveconst = false
+        local anyconst = anyrefine = false
         for i in 1:length(fields)
             a = fields[i]
             a = isvarargtype(a) ? a : widenreturn(a, bestguess, nslots, slottypes, changes)
-            if !haveconst && has_const_info(a)
-                # TODO: consider adding && const_prop_profitable(a) here?
-                haveconst = true
+            if !anyconst
+                if has_const_info(a)
+                    # TODO: consider adding && const_prop_profitable(a) here?
+                    anyconst = true
+                elseif !anyrefine
+                    anyrefine = a ⋤ fieldtype(rt.typ, i)
+                end
             end
             fields[i] = a
         end
-        haveconst && return PartialStruct(rt.typ, fields)
+        (anyconst || anyrefine) && return PartialStruct(rt.typ, fields)
     end
     if isa(rt, PartialOpaque)
         return rt # XXX: this case was missed in #39512
